@@ -331,6 +331,10 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
         ret = validate_exprs(exp->v.Compare.comparators, Load, 0) &&
             validate_expr(exp->v.Compare.left, Load);
         break;
+    case CallPipelined_kind:
+        ret = validate_expr(exp->v.CallPipelined.call, Load) &&
+            validate_expr(exp->v.CallPipelined.pip_arg, Load);
+        break;
     case Call_kind:
         ret = validate_expr(exp->v.Call.func, Load) &&
             validate_exprs(exp->v.Call.args, Load, 0) &&

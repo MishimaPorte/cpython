@@ -827,6 +827,11 @@ power[expr_ty]:
 
 await_primary[expr_ty] (memo):
     | 'await' a=primary { CHECK_VERSION(expr_ty, 5, "Await expressions are", _PyAST_Await(a, EXTRA)) }
+    | pipeline
+
+pipeline[expr_ty]:
+    | a=pipeline token='|>' b=primary { _PyAST_CallPipelined(b, a, EXTRA) }
+    | a=primary token='|>' b=primary { _PyAST_CallPipelined(b, a, EXTRA) }
     | primary
 
 primary[expr_ty]:
@@ -839,6 +844,12 @@ primary[expr_ty]:
                  EXTRA) }
     | a=primary '[' b=slices ']' { _PyAST_Subscript(a, b, Load, EXTRA) }
     | atom
+    # | a=primary '|>' b=primary '(' c=[arguments] ')' {
+    #     _PyAST_Call(b,
+    #              # (asdl_expr_seq*)_PyPegen_seq_append_to_end(p, (asdl_seq*)((c) ? ((expr_ty) c)->v.Call.args : NULL), a),
+    #              (c) ? ((expr_ty) c)->v.Call.args : NULL,
+    #              (c) ? ((expr_ty) c)->v.Call.keywords : NULL,
+    #              EXTRA) }
 
 slices[expr_ty]:
     | a=slice !',' { a }

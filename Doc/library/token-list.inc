@@ -78,6 +78,8 @@
      - ``"&="``
    * - .. data:: VBAREQUAL
      - ``"|="``
+   * - .. data:: PIPELINEOP
+     - ``"|>"``
    * - .. data:: CIRCUMFLEXEQUAL
      - ``"^="``
    * - .. data:: LEFTSHIFTEQUAL

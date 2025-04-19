@@ -39,6 +39,7 @@ struct ast_state {
     PyObject *BitXor_type;
     PyObject *BoolOp_type;
     PyObject *Break_type;
+    PyObject *CallPipelined_type;
     PyObject *Call_type;
     PyObject *ClassDef_type;
     PyObject *Compare_type;
@@ -173,6 +174,7 @@ struct ast_state {
     PyObject *body;
     PyObject *boolop_type;
     PyObject *bound;
+    PyObject *call;
     PyObject *cases;
     PyObject *cause;
     PyObject *cls;
@@ -234,6 +236,7 @@ struct ast_state {
     PyObject *pattern;
     PyObject *pattern_type;
     PyObject *patterns;
+    PyObject *pip_arg;
     PyObject *posonlyargs;
     PyObject *rest;
     PyObject *returns;

@@ -505,7 +505,6 @@ _Py_CheckRecursiveCall(PyThreadState *tstate, const char *where)
     }
 }
 
-
 const binaryfunc _PyEval_BinaryOps[] = {
     [NB_ADD] = PyNumber_Add,
     [NB_AND] = PyNumber_And,

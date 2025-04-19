@@ -56,6 +56,7 @@ void _PyAST_Fini(PyInterpreterState *interp)
     Py_CLEAR(state->BitXor_type);
     Py_CLEAR(state->BoolOp_type);
     Py_CLEAR(state->Break_type);
+    Py_CLEAR(state->CallPipelined_type);
     Py_CLEAR(state->Call_type);
     Py_CLEAR(state->ClassDef_type);
     Py_CLEAR(state->Compare_type);
@@ -190,6 +191,7 @@ void _PyAST_Fini(PyInterpreterState *interp)
     Py_CLEAR(state->body);
     Py_CLEAR(state->boolop_type);
     Py_CLEAR(state->bound);
+    Py_CLEAR(state->call);
     Py_CLEAR(state->cases);
     Py_CLEAR(state->cause);
     Py_CLEAR(state->cls);
@@ -251,6 +253,7 @@ void _PyAST_Fini(PyInterpreterState *interp)
     Py_CLEAR(state->pattern);
     Py_CLEAR(state->pattern_type);
     Py_CLEAR(state->patterns);
+    Py_CLEAR(state->pip_arg);
     Py_CLEAR(state->posonlyargs);
     Py_CLEAR(state->rest);
     Py_CLEAR(state->returns);
@@ -299,6 +302,7 @@ static int init_identifiers(struct ast_state *state)
     if ((state->bases = PyUnicode_InternFromString("bases")) == NULL) return -1;
     if ((state->body = PyUnicode_InternFromString("body")) == NULL) return -1;
     if ((state->bound = PyUnicode_InternFromString("bound")) == NULL) return -1;
+    if ((state->call = PyUnicode_InternFromString("call")) == NULL) return -1;
     if ((state->cases = PyUnicode_InternFromString("cases")) == NULL) return -1;
     if ((state->cause = PyUnicode_InternFromString("cause")) == NULL) return -1;
     if ((state->cls = PyUnicode_InternFromString("cls")) == NULL) return -1;
@@ -350,6 +354,7 @@ static int init_identifiers(struct ast_state *state)
     if ((state->orelse = PyUnicode_InternFromString("orelse")) == NULL) return -1;
     if ((state->pattern = PyUnicode_InternFromString("pattern")) == NULL) return -1;
     if ((state->patterns = PyUnicode_InternFromString("patterns")) == NULL) return -1;
+    if ((state->pip_arg = PyUnicode_InternFromString("pip_arg")) == NULL) return -1;
     if ((state->posonlyargs = PyUnicode_InternFromString("posonlyargs")) == NULL) return -1;
     if ((state->rest = PyUnicode_InternFromString("rest")) == NULL) return -1;
     if ((state->returns = PyUnicode_InternFromString("returns")) == NULL) return -1;
@@ -613,6 +618,10 @@ static const char * const Call_fields[]={
     "func",
     "args",
     "keywords",
+};
+static const char * const CallPipelined_fields[]={
+    "call",
+    "pip_arg",
 };
 static const char * const FormattedValue_fields[]={
     "value",
@@ -3120,6 +3129,43 @@ add_ast_annotations(struct ast_state *state)
         return 0;
     }
     Py_DECREF(Call_annotations);
+    PyObject *CallPipelined_annotations = PyDict_New();
+    if (!CallPipelined_annotations) return 0;
+    {
+        PyObject *type = state->expr_type;
+        Py_INCREF(type);
+        cond = PyDict_SetItemString(CallPipelined_annotations, "call", type) ==
+                                    0;
+        Py_DECREF(type);
+        if (!cond) {
+            Py_DECREF(CallPipelined_annotations);
+            return 0;
+        }
+    }
+    {
+        PyObject *type = state->expr_type;
+        Py_INCREF(type);
+        cond = PyDict_SetItemString(CallPipelined_annotations, "pip_arg", type)
+                                    == 0;
+        Py_DECREF(type);
+        if (!cond) {
+            Py_DECREF(CallPipelined_annotations);
+            return 0;
+        }
+    }
+    cond = PyObject_SetAttrString(state->CallPipelined_type, "_field_types",
+                                  CallPipelined_annotations) == 0;
+    if (!cond) {
+        Py_DECREF(CallPipelined_annotations);
+        return 0;
+    }
+    cond = PyObject_SetAttrString(state->CallPipelined_type, "__annotations__",
+                                  CallPipelined_annotations) == 0;
+    if (!cond) {
+        Py_DECREF(CallPipelined_annotations);
+        return 0;
+    }
+    Py_DECREF(CallPipelined_annotations);
     PyObject *FormattedValue_annotations = PyDict_New();
     if (!FormattedValue_annotations) return 0;
     {
@@ -6265,6 +6311,7 @@ init_types(void *arg)
         "     | YieldFrom(expr value)\n"
         "     | Compare(expr left, cmpop* ops, expr* comparators)\n"
         "     | Call(expr func, expr* args, keyword* keywords)\n"
+        "     | CallPipelined(expr call, expr pip_arg)\n"
         "     | FormattedValue(expr value, int conversion, expr? format_spec)\n"
         "     | JoinedStr(expr* values)\n"
         "     | Constant(constant value, string? kind)\n"
@@ -6353,6 +6400,11 @@ init_types(void *arg)
                                  3,
         "Call(expr func, expr* args, keyword* keywords)");
     if (!state->Call_type) return -1;
+    state->CallPipelined_type = make_type(state, "CallPipelined",
+                                          state->expr_type,
+                                          CallPipelined_fields, 2,
+        "CallPipelined(expr call, expr pip_arg)");
+    if (!state->CallPipelined_type) return -1;
     state->FormattedValue_type = make_type(state, "FormattedValue",
                                            state->expr_type,
                                            FormattedValue_fields, 3,
@@ -8014,6 +8066,34 @@ _PyAST_Call(expr_ty func, asdl_expr_seq * args, asdl_keyword_seq * keywords,
 }
 
 expr_ty
+_PyAST_CallPipelined(expr_ty call, expr_ty pip_arg, int lineno, int col_offset,
+                     int end_lineno, int end_col_offset, PyArena *arena)
+{
+    expr_ty p;
+    if (!call) {
+        PyErr_SetString(PyExc_ValueError,
+                        "field 'call' is required for CallPipelined");
+        return NULL;
+    }
+    if (!pip_arg) {
+        PyErr_SetString(PyExc_ValueError,
+                        "field 'pip_arg' is required for CallPipelined");
+        return NULL;
+    }
+    p = (expr_ty)_PyArena_Malloc(arena, sizeof(*p));
+    if (!p)
+        return NULL;
+    p->kind = CallPipelined_kind;
+    p->v.CallPipelined.call = call;
+    p->v.CallPipelined.pip_arg = pip_arg;
+    p->lineno = lineno;
+    p->col_offset = col_offset;
+    p->end_lineno = end_lineno;
+    p->end_col_offset = end_col_offset;
+    return p;
+}
+
+expr_ty
 _PyAST_FormattedValue(expr_ty value, int conversion, expr_ty format_spec, int
                       lineno, int col_offset, int end_lineno, int
                       end_col_offset, PyArena *arena)
@@ -9651,6 +9731,21 @@ ast2obj_expr(struct ast_state *state, void* _o)
                              ast2obj_keyword);
         if (!value) goto failed;
         if (PyObject_SetAttr(result, state->keywords, value) == -1)
+            goto failed;
+        Py_DECREF(value);
+        break;
+    case CallPipelined_kind:
+        tp = (PyTypeObject *)state->CallPipelined_type;
+        result = PyType_GenericNew(tp, NULL, NULL);
+        if (!result) goto failed;
+        value = ast2obj_expr(state, o->v.CallPipelined.call);
+        if (!value) goto failed;
+        if (PyObject_SetAttr(result, state->call, value) == -1)
+            goto failed;
+        Py_DECREF(value);
+        value = ast2obj_expr(state, o->v.CallPipelined.pip_arg);
+        if (!value) goto failed;
+        if (PyObject_SetAttr(result, state->pip_arg, value) == -1)
             goto failed;
         Py_DECREF(value);
         break;
@@ -14726,6 +14821,54 @@ obj2ast_expr(struct ast_state *state, PyObject* obj, expr_ty* out, PyArena*
         if (*out == NULL) goto failed;
         return 0;
     }
+    tp = state->CallPipelined_type;
+    isinstance = PyObject_IsInstance(obj, tp);
+    if (isinstance == -1) {
+        return -1;
+    }
+    if (isinstance) {
+        expr_ty call;
+        expr_ty pip_arg;
+
+        if (PyObject_GetOptionalAttr(obj, state->call, &tmp) < 0) {
+            return -1;
+        }
+        if (tmp == NULL) {
+            PyErr_SetString(PyExc_TypeError, "required field \"call\" missing from CallPipelined");
+            return -1;
+        }
+        else {
+            int res;
+            if (_Py_EnterRecursiveCall(" while traversing 'CallPipelined' node")) {
+                goto failed;
+            }
+            res = obj2ast_expr(state, tmp, &call, arena);
+            _Py_LeaveRecursiveCall();
+            if (res != 0) goto failed;
+            Py_CLEAR(tmp);
+        }
+        if (PyObject_GetOptionalAttr(obj, state->pip_arg, &tmp) < 0) {
+            return -1;
+        }
+        if (tmp == NULL) {
+            PyErr_SetString(PyExc_TypeError, "required field \"pip_arg\" missing from CallPipelined");
+            return -1;
+        }
+        else {
+            int res;
+            if (_Py_EnterRecursiveCall(" while traversing 'CallPipelined' node")) {
+                goto failed;
+            }
+            res = obj2ast_expr(state, tmp, &pip_arg, arena);
+            _Py_LeaveRecursiveCall();
+            if (res != 0) goto failed;
+            Py_CLEAR(tmp);
+        }
+        *out = _PyAST_CallPipelined(call, pip_arg, lineno, col_offset,
+                                    end_lineno, end_col_offset, arena);
+        if (*out == NULL) goto failed;
+        return 0;
+    }
     tp = state->FormattedValue_type;
     isinstance = PyObject_IsInstance(obj, tp);
     if (isinstance == -1) {
@@ -17788,6 +17931,10 @@ astmodule_exec(PyObject *m)
         return -1;
     }
     if (PyModule_AddObjectRef(m, "Call", state->Call_type) < 0) {
+        return -1;
+    }
+    if (PyModule_AddObjectRef(m, "CallPipelined", state->CallPipelined_type) <
+        0) {
         return -1;
     }
     if (PyModule_AddObjectRef(m, "FormattedValue", state->FormattedValue_type)

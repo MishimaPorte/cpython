@@ -2497,6 +2497,10 @@ symtable_visit_expr(struct symtable *st, expr_ty e)
         VISIT(st, expr, e->v.Compare.left);
         VISIT_SEQ(st, expr, e->v.Compare.comparators);
         break;
+    case CallPipelined_kind:
+        VISIT(st, expr, e->v.CallPipelined.call);
+        VISIT(st, expr, e->v.CallPipelined.pip_arg);
+        break;
     case Call_kind:
         VISIT(st, expr, e->v.Call.func);
         VISIT_SEQ(st, expr, e->v.Call.args);

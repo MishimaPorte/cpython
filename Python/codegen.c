@@ -4030,6 +4030,39 @@ codegen_call(compiler *c, expr_ty e)
 }
 
 static int
+codegen_call_pipelined(compiler *c, expr_ty e)
+{
+    expr_ty call = e->v.CallPipelined.call;
+    if (call->kind != Call_kind)
+        return _PyCompile_Error(c, LOC(e), "pipeline does not lead a function");
+
+    // ADDOP(c, LOC(e), PUSH_NULL);
+
+    RETURN_IF_ERROR(codegen_validate_keywords(c, call->v.Call.keywords));
+    // int ret = maybe_optimize_method_call(c, call);
+    // if (ret < 0) {
+    //     return ERROR;
+    // }
+    // if (ret == 1) {
+    //     return SUCCESS;
+    // }
+    NEW_JUMP_TARGET_LABEL(c, skip_normal_call);
+    RETURN_IF_ERROR(check_caller(c, call->v.Call.func));
+    VISIT(c, expr, call->v.Call.func);
+    ADDOP(c, LOC(call), PUSH_NULL);
+    VISIT(c, expr, e->v.CallPipelined.pip_arg);
+    // RETURN_IF_ERROR(maybe_optimize_function_call(c, call, skip_normal_call));
+    location loc = LOC(call->v.Call.func);
+    // loc = LOC(call);
+    int ret = codegen_call_helper(c, loc, 1,
+                              call->v.Call.args,
+                              call->v.Call.keywords);
+    USE_LABEL(c, skip_normal_call);
+    return ret;
+}
+
+
+static int
 codegen_joined_str(compiler *c, expr_ty e)
 {
     location loc = LOC(e);
@@ -5163,6 +5196,8 @@ codegen_visit_expr(compiler *c, expr_ty e)
         return codegen_compare(c, e);
     case Call_kind:
         return codegen_call(c, e);
+    case CallPipelined_kind:
+        return codegen_call_pipelined(c, e);
     case Constant_kind:
         ADDOP_LOAD_CONST(c, loc, e->v.Constant.value);
         break;
